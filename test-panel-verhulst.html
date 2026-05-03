@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<body>
+
+    <h2>Testing panel Verhulst</h2>
+
+    <button onclick="checkHealth()">Health</button>
+    <button onclick="listPoles()">Listar Poles</button>
+
+    <br><br>
+
+    Frecuencia: <input type="number" id="carrier_freq" value="4000"><br>
+    Perfil: <input type="text" id="poles_profile" value="Flat00"><br>
+    nH: <input type="number" id="nH" value="13"><br>
+    nM: <input type="number" id="nM" value="3"><br>
+    nL: <input type="number" id="nL" value="3"><br>
+    <br>
+    <button onclick="runSimulation()">Ejecutar Simulación</button>
+
+    <br><br>
+    <textarea id="output" rows="20" cols="80">Esperando comandos...</textarea>
+
+    <script>
+        const API_URL = "http://localhost:8000";
+
+        function setOutput(val) {
+            document.getElementById('output').value = val;
+        }
+
+        async function checkHealth() {
+            setOutput("Verificando...");
+            try {
+                const res = await fetch(`${API_URL}/health`);
+                setOutput(JSON.stringify(await res.json(), null, 2));
+            } catch (e) {
+                setOutput("Error: " + e.message);
+            }
+        }
+
+        async function listPoles() {
+            setOutput("Listando...");
+            try {
+                const res = await fetch(`${API_URL}/poles`);
+                setOutput(JSON.stringify(await res.json(), null, 2));
+            } catch (e) {
+                setOutput("Error: " + e.message);
+            }
+        }
+
+        async function runSimulation() {
+            const payload = {
+                carrier_freq: parseFloat(document.getElementById('carrier_freq').value),
+                poles_profile: document.getElementById('poles_profile').value,
+                nH: parseInt(document.getElementById('nH').value),
+                nM: parseInt(document.getElementById('nM').value),
+                nL: parseInt(document.getElementById('nL').value)
+            };
+
+            setOutput("Simulando...");
+            
+            try {
+                const res = await fetch(`${API_URL}/simulate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                setOutput(JSON.stringify(data, null, 2));
+            } catch (e) {
+                setOutput("Error: " + e.message);
+            }
+        }
+    </script>
+</body>
+</html>

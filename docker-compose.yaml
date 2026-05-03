@@ -1,0 +1,8 @@
+services:
+  verhulst:
+    build: .
+    container_name: verhulst_model
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data/simulations:/app/simulations_results
