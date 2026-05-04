@@ -1,24 +1,88 @@
 <!DOCTYPE html>
 <html>
+<head>
+    <meta charset="UTF-8">
+</head>
 <body>
 
     <h2>Testing panel Verhulst</h2>
 
-    <button onclick="checkHealth()">Health</button>
-    <button onclick="listPoles()">Listar Poles</button>
+    <button type="button" onclick="checkHealth()">Health</button>
+    <button type="button" onclick="listPoles()">Listar Poles</button>
 
     <br><br>
 
-    Frecuencia: <input type="number" id="carrier_freq" value="4000"><br>
-    Perfil: <input type="text" id="poles_profile" value="Flat00"><br>
-    nH: <input type="number" id="nH" value="13"><br>
-    nM: <input type="number" id="nM" value="3"><br>
-    nL: <input type="number" id="nL" value="3"><br>
+    <b>Estímulo</b><br>
+    Frecuencia portadora (Hz): <input type="number" id="carrier_freq" value="4000" min="100" max="16000"><br>
+    Frecuencia de muestreo (Hz): <input type="number" id="fs" value="100000" min="1"><br>
+
     <br>
-    <button onclick="runSimulation()">Ejecutar Simulación</button>
+    <b>Perfil auditivo</b><br>
+    Poles profile: <input type="text" id="poles_profile" value="Flat00"><br>
+
+    <br>
+    <b>Parámetros del modelo</b><br>
+    fc:
+    <select id="fc">
+        <option value="abr" selected>abr (401 secciones, recomendado para EFR/ABR)</option>
+        <option value="half">half (500)</option>
+        <option value="all">all (1000)</option>
+    </select><br>
+
+    Irregularidades:
+    <select id="irregularities" onchange="updateIrregularitiesUI()">
+        <option value="1" selected>1 (activadas)</option>
+        <option value="0">0 (desactivadas)</option>
+    </select><br>
+
+    <span id="irr_pct_row">
+        IrrPct: <input type="number" id="irr_pct" value="0.05" step="0.01" min="0" max="1"><br>
+    </span>
+
+    <span id="nl_row">
+        Non-linear type:
+        <select id="non_linear_type">
+            <option value="vel" selected>vel</option>
+            <option value="none">none (modelo lineal)</option>
+        </select><br>
+    </span>
+
+    Storeflag: <input type="text" id="storeflag" value="w" oninput="updateStoreflagUI()"><br>
+    <small id="storeflag_hint" style="color:gray">
+        Letras activas: v=vel BM, y=desp BM, e=OAE, i=IHC, h=HSR, m=MSR, l=LSR, b=CN+IC, w=ondas ABR.<br>
+        Mínimo recomendado: w. Las letras b y w se fuerzan siempre.
+    </small><br>
+
+    Subject (semilla): <input type="number" id="subject" value="1" min="1"><br>
+
+    <br>
+    <b>Fibras del nervio auditivo</b><br>
+    <span id="fibers_hint" style="display:none; color:orange">
+        ⚠ Las fibras solo se usan si el storeflag incluye h, m, l, b o w.<br>
+    </span>
+    nH (HSR): <input type="number" id="nH" value="13" min="0"><br>
+    nM (MSR): <input type="number" id="nM" value="3" min="0"><br>
+    nL (LSR): <input type="number" id="nL" value="3" min="0"><br>
+
+    <br>
+    <b>Guardado</b><br>
+    Arrays crudos (save_raw):
+    <input type="radio" name="save_raw" value="true" id="raw_t" onchange="updateSaveRawUI()">
+    <label for="raw_t">True</label>
+    <input type="radio" name="save_raw" value="false" id="raw_f" checked onchange="updateSaveRawUI()">
+    <label for="raw_f">False</label><br>
+    <small id="save_raw_hint" style="color:gray; display:none">
+        Guarda v, cf, stimulus y fs_bm en raw.npz. Solo útil si el storeflag incluye v.
+    </small>
 
     <br><br>
-    <textarea id="output" rows="20" cols="80">Esperando comandos...</textarea>
+    <div id="validation_errors" style="color:red; display:none"></div>
+
+    <button type="button" onclick="runSimulation()">Ejecutar Simulación</button>
+
+    <br><br>
+    <b>Response:</b><br>
+    <textarea id="output" rows="30" cols="80"></textarea>
 
     <script>
         const API_URL = "http://localhost:8000";
@@ -27,49 +91,188 @@
             document.getElementById('output').value = val;
         }
 
+        function appendOutput(val) {
+            document.getElementById('output').value += val;
+        }
+
+        // -------------------------------------------------------
+        // UI reactiva
+        // -------------------------------------------------------
+
+        function updateIrregularitiesUI() {
+            const irr = parseInt(document.getElementById('irregularities').value);
+            document.getElementById('irr_pct_row').style.display = irr ? '' : 'none';
+            document.getElementById('nl_row').style.display      = irr ? '' : 'none';
+        }
+
+        function updateStoreflagUI() {
+            const sf = document.getElementById('storeflag').value;
+            const needsFibers = /[hmlbw]/.test(sf);
+            document.getElementById('fibers_hint').style.display = needsFibers ? '' : 'none';
+        }
+
+        function updateSaveRawUI() {
+            const saveRaw = document.querySelector('input[name="save_raw"]:checked').value === "true";
+            document.getElementById('save_raw_hint').style.display = saveRaw ? '' : 'none';
+        }
+
+        // -------------------------------------------------------
+        // Validación
+        // -------------------------------------------------------
+
+        function validate() {
+            const errors = [];
+
+            const cf = parseFloat(document.getElementById('carrier_freq').value);
+            if (isNaN(cf) || cf <= 0)
+                errors.push("carrier_freq debe ser > 0.");
+
+            const fs = parseFloat(document.getElementById('fs').value);
+            if (isNaN(fs) || fs <= 0)
+                errors.push("fs debe ser > 0.");
+            if (fs !== 100000)
+                errors.push("⚠ El modelo trabaja internamente a 100000 Hz. Otro valor puede dar resultados incorrectos.");
+
+            const profile = document.getElementById('poles_profile').value.trim();
+            if (!profile)
+                errors.push("poles_profile no puede estar vacío.");
+
+            const sf = document.getElementById('storeflag').value.trim();
+            if (!sf)
+                errors.push("storeflag no puede estar vacío.");
+            const validFlags = new Set('vyeihmlbw');
+            for (const c of sf) {
+                if (!validFlags.has(c))
+                    errors.push(`storeflag contiene letra inválida: '${c}'. Válidas: v y e i h m l b w.`);
+            }
+
+            const irr = parseInt(document.getElementById('irregularities').value);
+            const irrPct = parseFloat(document.getElementById('irr_pct').value);
+            if (irr === 0 && irrPct > 0)
+                errors.push("⚠ irr_pct > 0 pero irregularidades desactivadas. irr_pct será ignorado.");
+
+            const subject = parseInt(document.getElementById('subject').value);
+            if (isNaN(subject) || subject < 1)
+                errors.push("subject debe ser >= 1.");
+
+            const nH = parseInt(document.getElementById('nH').value);
+            const nM = parseInt(document.getElementById('nM').value);
+            const nL = parseInt(document.getElementById('nL').value);
+            if (nH < 0 || nM < 0 || nL < 0)
+                errors.push("nH, nM, nL deben ser >= 0.");
+
+            return errors;
+        }
+
+        // -------------------------------------------------------
+        // Endpoints
+        // -------------------------------------------------------
+
         async function checkHealth() {
-            setOutput("Verificando...");
+            setOutput("Verificando health...");
             try {
                 const res = await fetch(`${API_URL}/health`);
-                setOutput(JSON.stringify(await res.json(), null, 2));
+                const data = await res.json();
+                setOutput(JSON.stringify(data, null, 2));
             } catch (e) {
-                setOutput("Error: " + e.message);
+                setOutput("Error de red: " + e.message);
             }
         }
 
         async function listPoles() {
-            setOutput("Listando...");
+            setOutput("Listando poles...");
             try {
                 const res = await fetch(`${API_URL}/poles`);
-                setOutput(JSON.stringify(await res.json(), null, 2));
+                const data = await res.json();
+                setOutput(JSON.stringify(data, null, 2));
             } catch (e) {
-                setOutput("Error: " + e.message);
+                setOutput("Error de red: " + e.message);
             }
         }
 
         async function runSimulation() {
+            const errDiv = document.getElementById('validation_errors');
+
+            const errors = validate();
+            // Separar errores duros (sin ⚠) de warnings (con ⚠)
+            const hardErrors = errors.filter(e => !e.startsWith("⚠"));
+            const warnings   = errors.filter(e =>  e.startsWith("⚠"));
+
+            if (hardErrors.length > 0) {
+                errDiv.style.display = '';
+                errDiv.innerHTML = hardErrors.map(e => `• ${e}`).join('<br>');
+                return;
+            }
+
+            errDiv.style.display = 'none';
+            errDiv.innerHTML = '';
+
+            const saveRawBool = document.querySelector('input[name="save_raw"]:checked').value === "true";
+
             const payload = {
-                carrier_freq: parseFloat(document.getElementById('carrier_freq').value),
-                poles_profile: document.getElementById('poles_profile').value,
-                nH: parseInt(document.getElementById('nH').value),
-                nM: parseInt(document.getElementById('nM').value),
-                nL: parseInt(document.getElementById('nL').value)
+                carrier_freq:    parseFloat(document.getElementById('carrier_freq').value),
+                fs:              parseFloat(document.getElementById('fs').value),
+                poles_profile:   document.getElementById('poles_profile').value.trim(),
+                fc:              document.getElementById('fc').value,
+                irregularities:  parseInt(document.getElementById('irregularities').value),
+                storeflag:       document.getElementById('storeflag').value.trim(),
+                subject:         parseInt(document.getElementById('subject').value),
+                irr_pct:         parseFloat(document.getElementById('irr_pct').value),
+                non_linear_type: document.getElementById('non_linear_type').value,
+                nH:              parseInt(document.getElementById('nH').value),
+                nM:              parseInt(document.getElementById('nM').value),
+                nL:              parseInt(document.getElementById('nL').value),
+                save_raw:        saveRawBool
             };
 
-            setOutput("Simulando...");
-            
+            let out = "";
+            if (warnings.length > 0) {
+                out += "ADVERTENCIAS:\n";
+                warnings.forEach(w => out += `  ${w}\n`);
+                out += "\n";
+            }
+            out += "Payload enviado:\n" + JSON.stringify(payload, null, 2) + "\n\nSimulando...";
+            setOutput(out);
+
             try {
                 const res = await fetch(`${API_URL}/simulate`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
+
                 const data = await res.json();
-                setOutput(JSON.stringify(data, null, 2));
+                let result = "\n\n--- RESPONSE ---\n";
+
+                if (data.status === "ok") {
+                    result += "STATUS:        ok\n";
+                    result += "sim_id:        " + data.sim_id + "\n";
+                    result += "carrier_freq:  " + data.carrier_freq + " Hz\n";
+                    result += "poles_profile: " + data.poles_profile + "\n";
+                    result += "\nEFR:\n";
+                    result += "  Total: " + data.efr.efr_value_uV + " µV\n";
+                    result += "  Armónicos:\n";
+                    for (const [freq, amp] of Object.entries(data.efr.harmonics)) {
+                        result += `    ${freq} Hz → ${amp} µV\n`;
+                    }
+                } else {
+                    result += "STATUS: error\n";
+                    result += "sim_id: " + (data.sim_id || "N/A") + "\n";
+                    result += "Error:  " + data.error + "\n";
+                }
+
+                result += "\n--- JSON completo ---\n" + JSON.stringify(data, null, 2);
+                appendOutput(result);
+
             } catch (e) {
-                setOutput("Error: " + e.message);
+                appendOutput("\n\nError de red: " + e.message + "\n(Verificá que la API esté corriendo en " + API_URL + ")");
             }
         }
+
+        // Inicializar UI
+        updateIrregularitiesUI();
+        updateStoreflagUI();
+        updateSaveRawUI();
     </script>
 </body>
 </html>

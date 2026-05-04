@@ -6,11 +6,11 @@ Endpoints:
     GET  /health          — estado del servidor
     GET  /poles           — lista de perfiles disponibles
     POST /simulate        — corre una simulación con parámetros configurables
-    POST /simulate/batch  — corre N simulaciones en paralelo (WIP, ¿necesita ParallelRAMSimulationsEFR?)
+    POST /simulate/batch  — corre N simulaciones en paralelo
 """
 
 import os
-import sys
+import shutil
 import numpy as np
 import concurrent.futures
 from typing import Optional, List
@@ -24,6 +24,17 @@ from model2018 import model2018
 # CORS!
 from fastapi.middleware.cors import CORSMiddleware
 
+# Para generar el gráfico igual pero sin display ya que Docker es headless
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
+import uuid
+import scipy.io as sio
+
+# Al estar dentro de Docker, usará UTC por defecto -> se fuerza UTC-3 por el momento
+from datetime import datetime, timezone, timedelta
+TZ_AR = timezone(timedelta(hours=-3))
 
 app = FastAPI(
     title="Verhulst 2018 Simulation API",
@@ -39,7 +50,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 # Rutas base
 # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
@@ -50,10 +60,9 @@ app.add_middleware(
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 POLES_BASE = os.path.join(BASE_DIR, "Verhulstetal2018Model", "Poles")
 
-# Hardcodeadas igual que en el modelo original (Verificar que implica y la posibilidad de editarlo?)
+# Hardcodeadas igual que en el modelo original (No es configurable sin cambiar el estímulo.)
 FUNDAMENTAL_HZ = 110
 NUM_HARMONICS = 4
-
 
 # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 # Schemas
@@ -104,7 +113,7 @@ class SimulationParams(BaseModel):
             "Máscara de variables a guardar. Cada letra activa una salida: "
             "v=velocidad BM, y=desplazamiento BM, e=OAE, i=IHC, "
             "h=fibras HSR, m=fibras MSR, l=fibras LSR, b=CN+IC, w=ondas ABR (w1/w3/w5). "
-            "Mínimo recomendado: 'w'. Máximo: 'evihmlbw'."
+            "Forzado internamente: 'w'. Máximo: 'evihmlbw'."
         ),
     )
     subject: int = Field(
@@ -143,6 +152,15 @@ class SimulationParams(BaseModel):
         ge=0,
     )
 
+    # Guardado de arrays crudos
+    save_raw: bool = Field(
+    default=False,
+    description=(
+        "Si es True, guarda raw.npz (cf, stimulus, fs_bm) y, si 'v' está en storeflag, "
+        "también bm_velocity.npz con la velocidad de la membrana basilar."
+    )
+)
+
 
 class BatchSimulationRequest(BaseModel):
     """Múltiples simulaciones a correr en paralelo."""
@@ -163,6 +181,7 @@ class SimulationResult(BaseModel):
     status: str
     carrier_freq: float
     poles_profile: str
+    sim_id: Optional[str] = None
     efr: Optional[EFRResult] = None
     error: Optional[str] = None
 
@@ -194,7 +213,7 @@ def _list_poles() -> List[str]:
     )
 
 
-def _calculate_efr(output) -> EFRResult:
+def _calculate_efr(output) -> tuple[EFRResult, np.ndarray, np.ndarray, np.ndarray]:
     """Calcula EFR via FFT sobre w1+w3+w5, suma amplitudes en armónicos de 110Hz."""
     fs = float(output.fs_an)
     EFR = output.w1.flatten() + output.w3.flatten() + output.w5.flatten()
@@ -218,34 +237,48 @@ def _calculate_efr(output) -> EFRResult:
     return EFRResult(
         efr_value_uV=round(total, 6),
         harmonics=harmonic_amplitudes,
-    )
-
+    ), f, P1, EFR
 
 def _run_single(params: SimulationParams) -> SimulationResult:
     """Corre una simulación completa y devuelve el resultado."""
+    sim_id = str(uuid.uuid4())[:8]
+    timestamp = datetime.now(TZ_AR).strftime("%Y-%m-%dT%H-%M-%S")
+    folder_name = f"{timestamp}_{sim_id}"
+    sim_dir = f"/app/simulations_results/{folder_name}"
+
+    print(f"[{sim_id} - INFO] Iniciando simulación — carrier={params.carrier_freq}Hz, profile={params.poles_profile}")
+    os.makedirs(sim_dir, exist_ok=True)
+    print(f"[{sim_id} - INFO] Directorio creado: {sim_dir}")
+
     try:
         poles = _load_poles(params.poles_profile)
+        print(f"[{sim_id} - INFO] Poles cargados ({len(poles)} valores)")
     except FileNotFoundError as e:
+        shutil.rmtree(sim_dir, ignore_errors=True)
+        print(f"[{sim_id} - ERROR] Perfil no encontrado: {e}")
         return SimulationResult(
             status="error",
             carrier_freq=params.carrier_freq,
             poles_profile=params.poles_profile,
+            sim_id=None,
             error=str(e),
         )
 
     try:
         stimulus = get_RAM_stims(params.fs, np.array([params.carrier_freq]))
+        print(f"[{sim_id} - INFO] Estímulo generado — {stimulus.shape[1]} samples ({stimulus.shape[1]/params.fs:.3f}s)")
 
-        # 'w' requiere 'b' (cn/ic/anSummed), y 'b' requiere anfH/anfM/anfL.
-        # anfH solo se calcula si hay 'h' o 'b' — 'w' solo NO lo dispara.
-        # Por ahora se fuerza ambos para garantizar el pipeline completo hasta EFR.
-        # [ IMPORTANTE ] Es necesario revisar el código de los autores en este asunto.
         storeflag = params.storeflag
         if "w" not in storeflag:
             storeflag += "w"
         if "b" not in storeflag:
             storeflag += "b"
+        # 'w' en storeflag dispara anfM y anfL pero NO anfH (bug en model2018.py línea 251:
+        # le falta 'or w in storeflag' en la condición). Se fuerza 'b' como workaround
+        # hasta que el modelo sea corregido o se haga un patch local (no óptimo).
+        print(f"[{sim_id} - INFO] Storeflag efectivo: '{storeflag}'")
 
+        print(f"[{sim_id} - INFO] Corriendo modelo...")
         results = model2018(
             stimulus,
             params.fs,
@@ -260,24 +293,109 @@ def _run_single(params: SimulationParams) -> SimulationResult:
             nM=params.nM,
             nL=params.nL,
             clean=1,
-            data_folder="./",
+            data_folder=sim_dir,
         )
+        print(f"[{sim_id} - INFO] Modelo completado")
 
         output = results[0]
-        efr = _calculate_efr(output)
+        # Evita recalcular efr
+        efr, f_axis, P1, EFR_combined = _calculate_efr(output)
+        print(f"[{sim_id} - INFO] EFR calculado: {efr.efr_value_uV:.4f} µV")
+        
+        # Guardar EFR y ondas ABR
+        sio.savemat(f"{sim_dir}/efr.mat", {
+            'EFR': EFR_combined,
+            'w1': output.w1,
+            'w3': output.w3,
+            'w5': output.w5,
+            'efr_value_uV': efr.efr_value_uV,
+            'fs': output.fs_an,
+            'carrier_freq': params.carrier_freq,
+            'poles_profile': params.poles_profile,
+        })
+        print(f"[{sim_id} - INFO] efr.mat guardado")
 
+        # Guardar arrays crudos si se especificó
+        if params.save_raw:
+            # cf, stimulus y fs_bm siempre disponibles
+            np.savez(f"{sim_dir}/raw.npz",
+                cf=output.cf,
+                stimulus=stimulus,
+                fs_bm=output.fs_bm,
+            )
+            print(f"[{sim_id} - INFO] raw.npz guardado")
+            # v (velocidad BM) solo disponible si 'v' estaba en storeflag
+            if 'v' in storeflag:
+                np.savez(f"{sim_dir}/bm_velocity.npz",
+                    v=output.v,
+                )
+                print(f"[{sim_id} - INFO] bm_velocity.npz guardado")
+
+        # Generar y guardar gráfico (WIP)
+        fs_an = float(output.fs_an)
+        t_efr = np.arange(len(EFR_combined.flatten())) / fs_an
+        t_stim = np.arange(stimulus.shape[1]) / params.fs
+
+        fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+        fig.suptitle(
+            f'Simulación — Carrier: {params.carrier_freq} Hz | Perfil: {params.poles_profile}',
+            fontsize=14
+        )
+
+        axes[0, 0].plot(t_stim[:1000], stimulus[0][:1000])
+        axes[0, 0].set_title('Estímulo RAM (primeros 10 ms)')
+        axes[0, 0].set_xlabel('Tiempo (s)')
+        axes[0, 0].set_ylabel('Amplitud')
+        axes[0, 0].grid(True)
+
+        axes[0, 1].plot(t_efr, EFR_combined.flatten())
+        axes[0, 1].set_title('Waveform EFR (w1+w3+w5)')
+        axes[0, 1].set_xlabel('Tiempo (s)')
+        axes[0, 1].set_ylabel('Amplitud')
+        axes[0, 1].grid(True)
+
+        axes[1, 0].semilogy(f_axis, P1)
+        for h in [FUNDAMENTAL_HZ * k for k in range(1, NUM_HARMONICS + 1)]:
+            idx = int(np.argmin(np.abs(f_axis - h)))
+            axes[1, 0].semilogy(f_axis[idx], P1[idx], 'ro', markersize=8, label=f'{h} Hz')
+        axes[1, 0].set_title('Espectro FFT con armónicos')
+        axes[1, 0].set_xlabel('Frecuencia (Hz)')
+        axes[1, 0].set_ylabel('Potencia')
+        axes[1, 0].set_xlim(0, 500)
+        axes[1, 0].legend()
+        axes[1, 0].grid(True)
+
+        axes[1, 1].plot(t_efr, output.w1.flatten(), label='Wave 1', alpha=0.7)
+        axes[1, 1].plot(t_efr, output.w3.flatten(), label='Wave 3', alpha=0.7)
+        axes[1, 1].plot(t_efr, output.w5.flatten(), label='Wave 5', alpha=0.7)
+        axes[1, 1].set_title('Ondas ABR individuales')
+        axes[1, 1].set_xlabel('Tiempo (s)')
+        axes[1, 1].set_ylabel('Amplitud')
+        axes[1, 1].legend()
+        axes[1, 1].grid(True)
+
+        plt.tight_layout()
+        plt.savefig(f"{sim_dir}/plot.png", dpi=150, bbox_inches='tight')
+        plt.close(fig)
+        print(f"[{sim_id} - INFO] plot.png guardado")
+
+        print(f"[{sim_id} - INFO] Simulación completada OK")
         return SimulationResult(
             status="ok",
             carrier_freq=params.carrier_freq,
             poles_profile=params.poles_profile,
+            sim_id=sim_id,
             efr=efr,
         )
 
     except Exception as e:
+        shutil.rmtree(sim_dir, ignore_errors=True)
+        print(f"[{sim_id} - ERROR] {type(e).__name__}: {e}")
         return SimulationResult(
             status="error",
             carrier_freq=params.carrier_freq,
             poles_profile=params.poles_profile,
+            sim_id=None,
             error=str(e),
         )
 
@@ -311,8 +429,6 @@ def simulate(params: SimulationParams):
     """
     return _run_single(params)
 
-
-# [ IMPORTANTE ] Puede que sea necesario crear un identificador (tal vez uuid/hash) para correlacionar los datoss de entrada/salida.
 
 @app.post("/simulate/batch", response_model=List[SimulationResult])
 def simulate_batch(request: BatchSimulationRequest):

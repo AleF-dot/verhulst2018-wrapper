@@ -26,17 +26,51 @@ IF NOT EXIST Verhulstetal2018Model (
 echo.
 echo Limpiando directorio del modelo...
 set MODEL=Verhulstetal2018Model
-if exist %MODEL%\doc rmdir /s /q %MODEL%\doc
-if exist %MODEL%\.git rmdir /s /q %MODEL%\.git
-if exist %MODEL%\.gitignore del /q %MODEL%\.gitignore
-if exist %MODEL%\ExampleAnalysis.py del /q %MODEL%\ExampleAnalysis.py
-if exist %MODEL%\ExampleSimulation.py del /q %MODEL%\ExampleSimulation.py
-if exist %MODEL%\ExampleAnalysis.m del /q %MODEL%\ExampleAnalysis.m
-if exist %MODEL%\ExampleSimulation.m del /q %MODEL%\ExampleSimulation.m
-if exist %MODEL%\model2018.m del /q %MODEL%\model2018.m
-if exist %MODEL%\run_model2018.py del /q %MODEL%\run_model2018.py
-if exist %MODEL%\build.bat del /q %MODEL%\build.bat
-if exist %MODEL%\license.txt del /q %MODEL%\license.txt
+
+if exist %MODEL%\doc (
+    rmdir /s /q %MODEL%\doc
+    echo [+] Borrado: %MODEL%\doc\
+)
+if exist %MODEL%\.git (
+    rmdir /s /q %MODEL%\.git
+    echo [+] Borrado: %MODEL%\.git\
+)
+if exist %MODEL%\.gitignore (
+    del /q %MODEL%\.gitignore
+    echo [+] Borrado: %MODEL%\.gitignore
+)
+if exist %MODEL%\ExampleAnalysis.py (
+    del /q %MODEL%\ExampleAnalysis.py
+    echo [+] Borrado: %MODEL%\ExampleAnalysis.py
+)
+if exist %MODEL%\ExampleSimulation.py (
+    del /q %MODEL%\ExampleSimulation.py
+    echo [+] Borrado: %MODEL%\ExampleSimulation.py
+)
+if exist %MODEL%\ExampleAnalysis.m (
+    del /q %MODEL%\ExampleAnalysis.m
+    echo [+] Borrado: %MODEL%\ExampleAnalysis.m
+)
+if exist %MODEL%\ExampleSimulation.m (
+    del /q %MODEL%\ExampleSimulation.m
+    echo [+] Borrado: %MODEL%\ExampleSimulation.m
+)
+if exist %MODEL%\model2018.m (
+    del /q %MODEL%\model2018.m
+    echo [+] Borrado: %MODEL%\model2018.m
+)
+if exist %MODEL%\run_model2018.py (
+    del /q %MODEL%\run_model2018.py
+    echo [+] Borrado: %MODEL%\run_model2018.py
+)
+if exist %MODEL%\build.bat (
+    del /q %MODEL%\build.bat
+    echo [+] Borrado: %MODEL%\build.bat
+)
+if exist %MODEL%\license.txt (
+    del /q %MODEL%\license.txt
+    echo [+] Borrado: %MODEL%\license.txt
+)
 
 :: Verificar Docker
 docker info >nul 2>&1
@@ -51,16 +85,13 @@ IF %ERRORLEVEL% NEQ 0 (
 )
 
 :: Ejecución
-echo Ejecutando Contenedor...
+echo Levantando contenedor... (Ctrl+C para detener)
 docker compose up --build
 
 IF %ERRORLEVEL% NEQ 0 (
     echo.
     echo [!] Hubo un error al levantar el contenedor (es posible que ya exista un contenedor).
     echo.
-) ELSE (
-    echo.
-    echo [+] Contenedor levantado exitosamente.
 )
 
 pause
