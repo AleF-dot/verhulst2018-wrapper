@@ -1,2 +1,5 @@
 Verhulstetal2018Model/
 data/
+.venv/
+__pycache__/
+api/__pycache__/
