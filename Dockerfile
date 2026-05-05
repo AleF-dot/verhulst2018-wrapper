@@ -19,9 +19,12 @@ WORKDIR /app
 # Copiar el modelo dentro del contenedor
 COPY Verhulstetal2018Model/ Verhulstetal2018Model/
 
+# Copiar requirements.txt
+COPY requirements.txt .
+
 # Dependencias de Python (modelo + API web)
 RUN pip install --upgrade pip && \
-    pip install numpy scipy matplotlib fastapi uvicorn[standard]
+    pip install -r requirements.txt
 
 # Intentar descomprimir Poles (no falla si ya está descomprimido)
 RUN cd Verhulstetal2018Model && unzip -q Poles.zip || true
@@ -49,8 +52,9 @@ COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/pytho
 COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/uvicorn
 COPY --from=builder /app/Verhulstetal2018Model /app/Verhulstetal2018Model
 
-# Copiar la API
-COPY SimulationAPI.py SimulationAPI.py
+# Copiar la API modularizada
+COPY api/ api/
+COPY requirements.txt .
 
 # Los módulos del modelo son importables desde SimulationAPI.py
 ENV PYTHONPATH="/app/Verhulstetal2018Model"
@@ -59,4 +63,4 @@ ENV PYTHONPATH="/app/Verhulstetal2018Model"
 EXPOSE 8000
 
 # Levantar servidor Uvicorn/FastAPI
-CMD ["uvicorn", "SimulationAPI:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
