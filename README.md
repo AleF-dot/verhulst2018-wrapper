@@ -3,6 +3,18 @@
 FastAPI wrapper sobre el modelo de periferia auditiva **Verhulst et al. 2018**.
 Expone el modelo como API REST containerizada con Docker.
 
+## Arquitectura
+
+```
+api/
+├── main.py      → punto de entrada FastAPI, lifespan, CORS
+├── routes.py    → endpoints HTTP
+├── schemas.py   → modelos Pydantic (request y response)
+└── services.py  → simulación, EFR, métricas, guardado
+```
+
+Flujo: `request → routes.py → services.py → model2018() → SimulationResult`
+
 ## Requisitos
 
 - [Git](https://git-scm.com/download/win)
@@ -25,15 +37,15 @@ chmod +x setup.sh
 
 El script verifica las dependencias necesarias (`git`, `unzip`, `gcc`, `gfortran`, `docker`) y levanta el contenedor.
 
-## Desarrollo local (sin Docker)
+## Desarrollo local (sin Docker/Windows)
 
-Requiere `gcc` en el PATH para compilar `tridiag.so`.
+Requiere `gcc` en el PATH para compilar `tridiag.dll`.
 
 ```bat
 run_local_api.bat
 ```
 
-El script compila `tridiag.so` si no existe, crea el entorno virtual, instala las dependencias y levanta la API con `--reload`.
+El script compila `tridiag.dll` si no existe, crea el entorno virtual, instala las dependencias y levanta la API con `--reload`.
 
 ## Endpoints
 
@@ -45,6 +57,17 @@ El script compila `tridiag.so` si no existe, crea el entorno virtual, instala la
 | POST | `/simulate/batch` | Corre N simulaciones en paralelo |
 
 Documentación interactiva disponible en `http://localhost:8000/docs` una vez levantado el contenedor.
+
+`/simulate/batch` corre simulaciones en paralelo. El número máximo de workers se configura con la variable de entorno `MAX_WORKERS` en `docker-compose.yaml` (default: 2).
+
+## Logs
+
+```bash
+docker logs verhulst_model
+docker logs -f verhulst_model   # seguir en tiempo real
+```
+
+Cada simulación loguea tiempo de ejecución, uso de CPU y RAM antes/después de `model2018()`.
 
 ## Resultados
 
@@ -68,6 +91,7 @@ Los siguientes archivos de [Verhulstetal2018Model](https://github.com/HearingTec
 - `ExampleAnalysis.m`, `ExampleSimulation.m`
 - `model2018.m`, `run_model2018.py`
 - `build.bat`, `license.txt`
+
 ## Atribución
 
 Modelo original: **Verhulst et al. 2018**

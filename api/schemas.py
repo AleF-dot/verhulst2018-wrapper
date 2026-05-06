@@ -20,7 +20,7 @@ class SimulationParams(BaseModel):
         default="Flat00",
         description=(
             "Nombre de la subcarpeta dentro de Poles/ que contiene el StartingPoles.dat. "
-            "Ejemplos: 'Flat00' (audición normal), 'Flat30', 'Flat60', 'Slope30'."
+            "Ejemplos: 'Flat00' (audición normal), 'Flat30', 'Flat35', 'Slope30'."
         ),
     )
     fc: str = Field(
@@ -110,6 +110,9 @@ class SimulationResult(BaseModel):
     status: str
     carrier_freq: float
     poles_profile: str
+    w1: Optional[List[float]] = None
+    w3: Optional[List[float]] = None
+    w5: Optional[List[float]] = None
     sim_id: Optional[str] = None
     efr: Optional[EFRResult] = None
     error: Optional[str] = None

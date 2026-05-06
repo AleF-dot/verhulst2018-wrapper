@@ -1,7 +1,10 @@
 """Lógica para las operaciones de simulación."""
 
+import logging
 import os
+import time
 import shutil
+import psutil
 import sys
 import uuid
 from datetime import datetime, timezone, timedelta
@@ -16,6 +19,8 @@ import matplotlib.pyplot as plt
 import scipy.io as sio
 
 from .schemas import SimulationParams, SimulationResult, EFRResult
+
+logger = logging.getLogger(__name__)
 
 # Configurar rutas para el modelo Verhulst
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -93,16 +98,16 @@ def run_simulation(params: SimulationParams) -> SimulationResult:
     folder_name = f"{timestamp}_{sim_id}"
     sim_dir = os.path.join(REPO_ROOT, 'simulations_results', folder_name)
 
-    print(f"[{sim_id} - INFO] Iniciando simulación — carrier={params.carrier_freq}Hz, perfil={params.poles_profile}")
+    logger.info(f"[{sim_id}] Iniciando simulación — carrier={params.carrier_freq}Hz, perfil={params.poles_profile}")
     os.makedirs(sim_dir, exist_ok=True)
-    print(f"[{sim_id} - INFO] Directorio creado: {sim_dir}")
+    logger.info(f"[{sim_id}] Directorio creado: {sim_dir}")
 
     try:
         poles = load_poles(params.poles_profile)
-        print(f"[{sim_id} - INFO] Poles cargados ({len(poles)} valores)")
+        logger.info(f"[{sim_id}] Poles cargados ({len(poles)} valores)")
     except FileNotFoundError as e:
         shutil.rmtree(sim_dir, ignore_errors=True)
-        print(f"[{sim_id} - ERROR] Perfil no encontrado: {e}")
+        logger.error(f"[{sim_id}] Perfil no encontrado: {e}")
         return SimulationResult(
             status='error',
             carrier_freq=params.carrier_freq,
@@ -113,16 +118,21 @@ def run_simulation(params: SimulationParams) -> SimulationResult:
 
     try:
         stimulus = get_RAM_stims(params.fs, np.array([params.carrier_freq]))
-        print(f"[{sim_id} - INFO] Estímulo generado — {stimulus.shape[1]} samples ({stimulus.shape[1]/params.fs:.3f}s)")
+        logger.info(f"[{sim_id}] Estímulo generado — {stimulus.shape[1]} samples ({stimulus.shape[1]/params.fs:.3f}s)")
 
         storeflag = params.storeflag
         if 'w' not in storeflag:
             storeflag += 'w'
         if 'b' not in storeflag:
             storeflag += 'b'
-        print(f"[{sim_id} - INFO] Storeflag efectivo: '{storeflag}'")
+        logger.info(f"[{sim_id}] Storeflag efectivo: '{storeflag}'")
 
-        print(f"[{sim_id} - INFO] Corriendo modelo...")
+        logger.info(f"[{sim_id}] Ejecutando simulación...")
+        _proc = psutil.Process(os.getpid())
+        _mem_before = _proc.memory_info().rss / 1024**2
+        _proc.cpu_percent(interval=None)
+        _t0 = time.perf_counter()
+
         results = model2018(
             stimulus,
             params.fs,
@@ -139,11 +149,19 @@ def run_simulation(params: SimulationParams) -> SimulationResult:
             clean=1,
             data_folder=sim_dir,
         )
-        print(f"[{sim_id} - INFO] Modelo completado")
+
+        _t1 = time.perf_counter()
+        _cpu = _proc.cpu_percent(interval=None)
+        _mem_after = _proc.memory_info().rss / 1024**2
+        logger.info(
+            f"[{sim_id}] model2018 — simulación completada en {_t1-_t0:.2f}s | "
+            f"CPU: {_cpu:.1f}% | "
+            f"RAM antes: {_mem_before:.0f} MB | después: {_mem_after:.0f} MB"
+        )
 
         output = results[0]
         efr, f_axis, P1, EFR_combined = calculate_efr(output)
-        print(f"[{sim_id} - INFO] EFR calculado: {efr.efr_value_uV:.4f} µV")
+        logger.info(f"[{sim_id}] EFR calculado: {efr.efr_value_uV:.4f} µV")
 
         sio.savemat(os.path.join(sim_dir, 'efr.mat'), {
             'EFR': EFR_combined,
@@ -155,7 +173,7 @@ def run_simulation(params: SimulationParams) -> SimulationResult:
             'carrier_freq': params.carrier_freq,
             'poles_profile': params.poles_profile,
         })
-        print(f"[{sim_id} - INFO] efr.mat guardado")
+        logger.info(f"[{sim_id}] efr.mat guardado")
 
         if params.save_raw:
             np.savez(os.path.join(sim_dir, 'raw.npz'),
@@ -163,15 +181,15 @@ def run_simulation(params: SimulationParams) -> SimulationResult:
                 stimulus=stimulus,
                 fs_bm=output.fs_bm,
             )
-            print(f"[{sim_id} - INFO] raw.npz guardado")
+            logger.info(f"[{sim_id}] raw.npz guardado")
             if 'v' in storeflag:
                 np.savez(os.path.join(sim_dir, 'bm_velocity.npz'),
                     v=output.v,
                 )
-                print(f"[{sim_id} - INFO] bm_velocity.npz guardado")
+                logger.info(f"[{sim_id}] bm_velocity.npz guardado")
 
         fs_an = float(output.fs_an)
-        t_efr = np.arange(len(EFR_combined.flatten())) / fs_an
+        t_efr = np.arange(len(EFR_combined)) / fs_an
         t_stim = np.arange(stimulus.shape[1]) / params.fs
 
         fig, axes = plt.subplots(2, 2, figsize=(12, 8))
@@ -186,7 +204,7 @@ def run_simulation(params: SimulationParams) -> SimulationResult:
         axes[0, 0].set_ylabel('Amplitud')
         axes[0, 0].grid(True)
 
-        axes[0, 1].plot(t_efr, EFR_combined.flatten())
+        axes[0, 1].plot(t_efr, EFR_combined)
         axes[0, 1].set_title('Forma de onda EFR (w1+w3+w5)')
         axes[0, 1].set_xlabel('Tiempo (s)')
         axes[0, 1].set_ylabel('Amplitud')
@@ -215,20 +233,26 @@ def run_simulation(params: SimulationParams) -> SimulationResult:
         plt.tight_layout()
         plt.savefig(os.path.join(sim_dir, 'plot.png'), dpi=150, bbox_inches='tight')
         plt.close(fig)
-        print(f"[{sim_id} - INFO] plot.png guardado")
+        logger.info(f"[{sim_id}] plot.png guardado")
+        logger.info(
+            f"[{sim_id}] Completada — EFR: {efr.efr_value_uV:.4f} µV | "
+            f"carrier: {params.carrier_freq}Hz | perfil: {params.poles_profile}"
+        )
 
-        print(f"[{sim_id} - INFO] Simulación completada OK")
         return SimulationResult(
             status='ok',
             carrier_freq=params.carrier_freq,
             poles_profile=params.poles_profile,
+            w1=output.w1.flatten().tolist(),
+            w3=output.w3.flatten().tolist(),
+            w5=output.w5.flatten().tolist(),
             sim_id=sim_id,
             efr=efr,
         )
 
     except Exception as e:
         shutil.rmtree(sim_dir, ignore_errors=True)
-        print(f"[{sim_id} - ERROR] {type(e).__name__}: {e}")
+        logger.error(f"[{sim_id}] {type(e).__name__}: {e}")
         return SimulationResult(
             status='error',
             carrier_freq=params.carrier_freq,

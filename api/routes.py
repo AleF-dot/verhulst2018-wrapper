@@ -1,5 +1,6 @@
 """Definición de rutas de la API."""
 
+import os
 import concurrent.futures
 from typing import List
 
@@ -8,6 +9,7 @@ from fastapi import APIRouter, HTTPException
 from .schemas import BatchSimulationRequest, SimulationParams, SimulationResult
 from .services import list_poles, run_simulation
 
+MAX_WORKERS = int(os.getenv('MAX_WORKERS', '2'))
 POLES_BASE_MSG = "No se encontraron perfiles en Poles/. Verificá que Poles.zip fue descomprimido."
 
 router = APIRouter()
@@ -39,6 +41,6 @@ def simulate(params: SimulationParams):
 @router.post('/simulate/batch', response_model=List[SimulationResult])
 def simulate_batch(request: BatchSimulationRequest):
     """Corre múltiples simulaciones en paralelo."""
-    with concurrent.futures.ProcessPoolExecutor() as executor:
+    with concurrent.futures.ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
         results = list(executor.map(run_simulation, request.simulations))
     return results

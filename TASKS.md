@@ -12,10 +12,17 @@
 [x] Límites de recursos en docker-compose.yaml
 [x] PYTHONUNBUFFERED=1 en docker-compose.yaml (prints bloqueantes durante simulación)
 [x] Pendiente setear PYTHONUNBUFFERED=1 en Dockerfile
-[ ] Exponer w1, w3, w5 como respuesta de la API
-[ ] EFR_combined.flatten() se llama de nuevo en el gráfico (t_efr y axes[0,1]) siendo que ya viene 1D de _calculate_efr. No rompe nada, pero es redundante.
-[ ] Carpeta huérfana cuando un worker muere durante la simulación (rmtree no corre si el proceso es killeado)
+[x] Exponer w1, w3, w5 como respuesta de la API
+[x] EFR_combined.flatten() se llama de nuevo en el gráfico (t_efr y axes[0,1]) siendo que ya viene 1D de _calculate_efr. No rompe nada, pero es redundante.
+[x] Carpeta huérfana cuando un worker muere durante la simulación (rmtree no corre si el proceso es killeado)
 [ ] Verificar si el worker siempre muere en la primera simulación o fue puntual
 [ ] Contemplar posibilidad de patch local a model2018.py línea 251 (workaround actual: forzar 'b' en storeflag)
 [ ] OHC_ind.py + mat files/ en el contenedor (habilita perfiles auditivos desde audiogramas clínicos reales)
 [ ] Decidir objetivo científico — necesario para actualizar dashboard y esquema de base de datos
+
+# 06/05/2026
+[x] logging estructurado — migración de print() a logger.info/error con basicConfig en main.py
+[x] Instrumentación de model2018(): tiempo (perf_counter), CPU (psutil) y RAM (rss) por simulación
+[x] MAX_WORKERS configurable via variable de entorno (docker-compose.yaml)
+[x] @app.on_event('startup') reemplazado por lifespan (asynccontextmanager)
+[x] psutil agregado a requirements.txt

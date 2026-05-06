@@ -5,3 +5,4 @@ matplotlib
 scipy
 uvicorn[standard]
 python-multipart
+psutil

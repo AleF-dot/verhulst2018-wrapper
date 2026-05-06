@@ -11,6 +11,8 @@ services:
       resources:
         limits:
           cpus: "6"
-          memory: 1G
+          memory: 4G
         reservations:
-          memory: 400M
+          memory: 600M
+    environment:
+      - MAX_WORKERS=2
