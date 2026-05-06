@@ -11,7 +11,8 @@
 [x] Multi-stage build en Dockerfile
 [x] Límites de recursos en docker-compose.yaml
 [x] PYTHONUNBUFFERED=1 en docker-compose.yaml (prints bloqueantes durante simulación)
-[ ] Pendiente setear PYTHONUNBUFFERED=1 en Dockerfile
+[x] Pendiente setear PYTHONUNBUFFERED=1 en Dockerfile
+[ ] Exponer w1, w3, w5 como respuesta de la API
 [ ] EFR_combined.flatten() se llama de nuevo en el gráfico (t_efr y axes[0,1]) siendo que ya viene 1D de _calculate_efr. No rompe nada, pero es redundante.
 [ ] Carpeta huérfana cuando un worker muere durante la simulación (rmtree no corre si el proceso es killeado)
 [ ] Verificar si el worker siempre muere en la primera simulación o fue puntual

@@ -16,6 +16,25 @@ setup.bat
 
 El script clona el modelo original, limpia archivos y levanta el contenedor.
 
+## Setup (Linux / Mac)
+
+```bash
+chmod +x setup.sh
+./setup.sh
+```
+
+El script verifica las dependencias necesarias (`git`, `unzip`, `gcc`, `gfortran`, `docker`) y levanta el contenedor.
+
+## Desarrollo local (sin Docker)
+
+Requiere `gcc` en el PATH para compilar `tridiag.so`.
+
+```bat
+run_local_api.bat
+```
+
+El script compila `tridiag.so` si no existe, crea el entorno virtual, instala las dependencias y levanta la API con `--reload`.
+
 ## Endpoints
 
 | Método | Ruta | Descripción |
@@ -43,13 +62,12 @@ Cada simulación genera una carpeta en `data/simulations/`:
 
 Los siguientes archivos de [Verhulstetal2018Model](https://github.com/HearingTechnology/Verhulstetal2018Model) son eliminados por `setup.bat` por no ser necesarios para la ejecución:
 
-- `doc/`
-- `.git/`, `.gitignore`
+- `doc/`, `.git/`
+- `.gitignore` , `Poles.zip`
 - `ExampleAnalysis.py`, `ExampleSimulation.py`
 - `ExampleAnalysis.m`, `ExampleSimulation.m`
 - `model2018.m`, `run_model2018.py`
 - `build.bat`, `license.txt`
-
 ## Atribución
 
 Modelo original: **Verhulst et al. 2018**

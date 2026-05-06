@@ -44,7 +44,7 @@ class SimulationParams(BaseModel):
             "Máscara de variables a guardar. Cada letra activa una salida: "
             "v=velocidad BM, y=desplazamiento BM, e=OAE, i=IHC, "
             "h=fibras HSR, m=fibras MSR, l=fibras LSR, b=CN+IC, w=ondas ABR (w1/w3/w5). "
-            "Forzado internamente: 'w'. Máximo: 'evihmlbw'."
+            "Forzado internamente: 'w' y 'b'. Máximo: 'evihmlbw'."
         ),
     )
     subject: int = Field(

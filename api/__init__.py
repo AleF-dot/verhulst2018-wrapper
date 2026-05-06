@@ -1,4 +1,4 @@
-"""Verhulst 2018 Simulation API package."""
+"""Exportaciones del módulo api."""
 
 from .schemas import (
     BatchSimulationRequest,

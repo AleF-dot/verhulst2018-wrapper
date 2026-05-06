@@ -72,6 +72,20 @@ if exist %MODEL%\license.txt (
     echo [+] Borrado: %MODEL%\license.txt
 )
 
+:: Descomprimir Poles y borrar el zip
+if exist %MODEL%\Poles.zip (
+    echo.
+    echo Descomprimiendo Poles.zip...
+    powershell -Command "Expand-Archive -Path '%MODEL%\Poles.zip' -DestinationPath '%MODEL%' -Force"
+    IF %ERRORLEVEL% NEQ 0 (
+        echo [!] Error al descomprimir Poles.zip
+        pause
+        exit /b
+    )
+    del /q %MODEL%\Poles.zip
+    echo [+] Poles descomprimido y zip eliminado
+)
+
 :: Verificar Docker
 docker info >nul 2>&1
 
