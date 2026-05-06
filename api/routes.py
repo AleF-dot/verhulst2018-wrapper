@@ -1,4 +1,4 @@
-"""API route handlers for simulation endpoints."""
+"""Definición de rutas de la API."""
 
 import concurrent.futures
 from typing import List
@@ -20,7 +20,7 @@ def health():
 
 @router.get('/poles', response_model=List[str])
 def get_poles():
-    """Get available auditory profiles."""
+    """Lista los perfiles auditivos disponibles en Poles/."""
     profiles = list_poles()
     if not profiles:
         raise HTTPException(
@@ -32,13 +32,13 @@ def get_poles():
 
 @router.post('/simulate', response_model=SimulationResult)
 def simulate(params: SimulationParams):
-    """Run a single simulation with given parameters."""
+    """Corre una simulación individual con los parámetros dados."""
     return run_simulation(params)
 
 
 @router.post('/simulate/batch', response_model=List[SimulationResult])
 def simulate_batch(request: BatchSimulationRequest):
-    """Run multiple simulations in parallel."""
+    """Corre múltiples simulaciones en paralelo."""
     with concurrent.futures.ProcessPoolExecutor() as executor:
         results = list(executor.map(run_simulation, request.simulations))
     return results

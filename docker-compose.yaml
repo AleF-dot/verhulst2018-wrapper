@@ -14,5 +14,3 @@ services:
           memory: 1G
         reservations:
           memory: 400M
-    environment:
-      - PYTHONUNBUFFERED=1 # Pendiente setear la variable de entorno en Dockerfile

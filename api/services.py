@@ -1,14 +1,15 @@
-"""Business logic for simulation operations."""
+"""Lógica para las operaciones de simulación."""
 
 import os
 import shutil
 import sys
 import uuid
-import concurrent.futures
 from datetime import datetime, timezone, timedelta
 from typing import List
 
 import numpy as np
+
+# Para generar el gráfico igual pero sin display ya que Docker es headless
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -16,7 +17,7 @@ import scipy.io as sio
 
 from .schemas import SimulationParams, SimulationResult, EFRResult
 
-# Setup paths for Verhulst model
+# Configurar rutas para el modelo Verhulst
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(BASE_DIR, '..'))
 MODEL_DIR = os.path.join(REPO_ROOT, 'Verhulstetal2018Model')
@@ -25,15 +26,16 @@ sys.path.insert(0, MODEL_DIR)
 from get_RAM_stims import get_RAM_stims
 from model2018 import model2018
 
-# Constants
+# Constantes
 POLES_BASE = os.path.join(REPO_ROOT, 'Verhulstetal2018Model', 'Poles')
 FUNDAMENTAL_HZ = 110
 NUM_HARMONICS = 4
+# Al estar dentro de Docker, usará UTC por defecto -> se fuerza UTC-3 por el momento
 TZ_AR = timezone(timedelta(hours=-3))
 
 
 def load_poles(profile: str) -> np.ndarray:
-    """Load poles configuration from file."""
+    """Carga la configuración de poles desde archivo."""
     path = os.path.join(POLES_BASE, profile, 'StartingPoles.dat')
     if not os.path.exists(path):
         available = list_poles()
@@ -48,7 +50,7 @@ def load_poles(profile: str) -> np.ndarray:
 
 
 def list_poles() -> List[str]:
-    """List available auditory profiles."""
+    """Lista los perfiles auditivos disponibles."""
     if not os.path.isdir(POLES_BASE):
         return []
     return sorted(
@@ -58,7 +60,7 @@ def list_poles() -> List[str]:
 
 
 def calculate_efr(output) -> tuple[EFRResult, np.ndarray, np.ndarray, np.ndarray]:
-    """Calculate EFR via FFT on w1+w3+w5, sum amplitudes at 110Hz harmonics."""
+    """Calcula EFR via FFT sobre w1+w3+w5, suma amplitudes en armónicos de 110Hz."""
     fs = float(output.fs_an)
     EFR = output.w1.flatten() + output.w3.flatten() + output.w5.flatten()
 
@@ -85,13 +87,13 @@ def calculate_efr(output) -> tuple[EFRResult, np.ndarray, np.ndarray, np.ndarray
 
 
 def run_simulation(params: SimulationParams) -> SimulationResult:
-    """Execute a complete simulation and return results."""
+    """Corre una simulación completa y devuelve el resultado."""
     sim_id = str(uuid.uuid4())[:8]
     timestamp = datetime.now(TZ_AR).strftime('%Y-%m-%dT%H-%M-%S')
     folder_name = f"{timestamp}_{sim_id}"
     sim_dir = os.path.join(REPO_ROOT, 'simulations_results', folder_name)
 
-    print(f"[{sim_id} - INFO] Iniciando simulación — carrier={params.carrier_freq}Hz, profile={params.poles_profile}")
+    print(f"[{sim_id} - INFO] Iniciando simulación — carrier={params.carrier_freq}Hz, perfil={params.poles_profile}")
     os.makedirs(sim_dir, exist_ok=True)
     print(f"[{sim_id} - INFO] Directorio creado: {sim_dir}")
 
@@ -185,7 +187,7 @@ def run_simulation(params: SimulationParams) -> SimulationResult:
         axes[0, 0].grid(True)
 
         axes[0, 1].plot(t_efr, EFR_combined.flatten())
-        axes[0, 1].set_title('Waveform EFR (w1+w3+w5)')
+        axes[0, 1].set_title('Forma de onda EFR (w1+w3+w5)')
         axes[0, 1].set_xlabel('Tiempo (s)')
         axes[0, 1].set_ylabel('Amplitud')
         axes[0, 1].grid(True)
@@ -201,9 +203,9 @@ def run_simulation(params: SimulationParams) -> SimulationResult:
         axes[1, 0].legend()
         axes[1, 0].grid(True)
 
-        axes[1, 1].plot(t_efr, output.w1.flatten(), label='Wave 1', alpha=0.7)
-        axes[1, 1].plot(t_efr, output.w3.flatten(), label='Wave 3', alpha=0.7)
-        axes[1, 1].plot(t_efr, output.w5.flatten(), label='Wave 5', alpha=0.7)
+        axes[1, 1].plot(t_efr, output.w1.flatten(), label='Onda 1', alpha=0.7)
+        axes[1, 1].plot(t_efr, output.w3.flatten(), label='Onda 3', alpha=0.7)
+        axes[1, 1].plot(t_efr, output.w5.flatten(), label='Onda 5', alpha=0.7)
         axes[1, 1].set_title('Ondas ABR individuales')
         axes[1, 1].set_xlabel('Tiempo (s)')
         axes[1, 1].set_ylabel('Amplitud')

@@ -6,11 +6,9 @@ FROM python:3.11-slim AS builder
 # Toolchain de compilación — solo necesario para construir tridiag.so
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     build-essential \
-    gcc \
     gfortran \
     libopenblas-dev \
     liblapack-dev \
-    unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # Directorio de trabajo
@@ -26,10 +24,8 @@ COPY requirements.txt .
 RUN pip install --upgrade pip && \
     pip install -r requirements.txt
 
-# Intentar descomprimir Poles (no falla si ya está descomprimido)
-RUN cd Verhulstetal2018Model && unzip -q Poles.zip || true
-
-# Normalizar build.sh y compilar librería nativa (tridiag.so)
+# Compilar librería nativa (tridiag.so)
+# Poles ya viene descomprimido desde setup.bat / setup.sh
 RUN cd Verhulstetal2018Model && sed -i 's/\r$//' build.sh && bash build.sh
 
 
@@ -52,12 +48,12 @@ COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/pytho
 COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/uvicorn
 COPY --from=builder /app/Verhulstetal2018Model /app/Verhulstetal2018Model
 
-# Copiar la API modularizada
+# Copiar la API
 COPY api/ api/
-COPY requirements.txt .
 
-# Los módulos del modelo son importables desde SimulationAPI.py
+# Los módulos del modelo son importables desde api/
 ENV PYTHONPATH="/app/Verhulstetal2018Model"
+ENV PYTHONUNBUFFERED=1
 
 # Exponer puerto 8000
 EXPOSE 8000
