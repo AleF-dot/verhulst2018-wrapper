@@ -1,7 +1,7 @@
 # verhulst2018-wrapper
 
 FastAPI wrapper sobre el modelo de periferia auditiva **Verhulst et al. 2018**.
-Expone el modelo como API REST containerizada con Docker.
+Expone el modelo como API REST contenerizada con Docker.
 
 ## Arquitectura
 
