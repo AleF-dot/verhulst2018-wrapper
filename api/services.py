@@ -2,10 +2,11 @@
 
 import logging
 import os
-import time
-import shutil
 import psutil
+import shutil
 import sys
+import threading
+import time
 import uuid
 from datetime import datetime, timezone, timedelta
 from typing import List
@@ -63,6 +64,16 @@ def list_poles() -> List[str]:
         if os.path.isdir(os.path.join(POLES_BASE, d))
     )
 
+def _sample_peak_ram(proc: psutil.Process, stop_event: threading.Event, result: dict) -> None:
+    """Muestrea RAM RSS cada 100ms y guarda el pico en result['rss']."""
+    while not stop_event.is_set():
+        try:
+            rss = proc.memory_info().rss / 1024**2
+            if rss > result['rss']:
+                result['rss'] = rss
+        except psutil.NoSuchProcess:
+            break
+        stop_event.wait(0.1)
 
 def calculate_efr(output) -> tuple[EFRResult, np.ndarray, np.ndarray, np.ndarray]:
     """Calcula EFR via FFT sobre w1+w3+w5, suma amplitudes en armónicos de 110Hz."""
@@ -129,34 +140,39 @@ def run_simulation(params: SimulationParams) -> SimulationResult:
 
         logger.info(f"[{sim_id}] Ejecutando simulación...")
         _proc = psutil.Process(os.getpid())
-        _mem_before = _proc.memory_info().rss / 1024**2
         _proc.cpu_percent(interval=None)
+        _stop = threading.Event()
+        _peak = {'rss': 0}
+        _sampler = threading.Thread(target=_sample_peak_ram, args=(_proc, _stop, _peak), daemon=True)
+        _sampler.start()
         _t0 = time.perf_counter()
 
-        results = model2018(
-            stimulus,
-            params.fs,
-            fc=params.fc,
-            irregularities=params.irregularities,
-            storeflag=storeflag,
-            subject=params.subject,
-            sheraPo=poles,
-            IrrPct=params.irr_pct,
-            non_linear_type=params.non_linear_type,
-            nH=params.nH,
-            nM=params.nM,
-            nL=params.nL,
-            clean=1,
-            data_folder=sim_dir,
-        )
+        try:
+            results = model2018(
+                stimulus,
+                params.fs,
+                fc=params.fc,
+                irregularities=params.irregularities,
+                storeflag=storeflag,
+                subject=params.subject,
+                sheraPo=poles,
+                IrrPct=params.irr_pct,
+                non_linear_type=params.non_linear_type,
+                nH=params.nH,
+                nM=params.nM,
+                nL=params.nL,
+                clean=1,
+                data_folder=sim_dir,
+            )
+        finally:
+            _t1 = time.perf_counter()
+            _cpu = _proc.cpu_percent(interval=None)
+            _stop.set()
+            _sampler.join()
 
-        _t1 = time.perf_counter()
-        _cpu = _proc.cpu_percent(interval=None)
-        _mem_after = _proc.memory_info().rss / 1024**2
         logger.info(
-            f"[{sim_id}] model2018 — simulación completada en {_t1-_t0:.2f}s | "
-            f"CPU: {_cpu:.1f}% | "
-            f"RAM antes: {_mem_before:.0f} MB | después: {_mem_after:.0f} MB"
+            f"[{sim_id}] model2018 — {_t1-_t0:.2f}s | "
+            f"CPU: {_cpu:.1f}% | RAM pico: {_peak['rss']:.0f} MB"
         )
 
         output = results[0]
@@ -252,7 +268,7 @@ def run_simulation(params: SimulationParams) -> SimulationResult:
 
     except Exception as e:
         shutil.rmtree(sim_dir, ignore_errors=True)
-        logger.error(f"[{sim_id}] {type(e).__name__}: {e}")
+        logger.exception(f"[{sim_id}] {type(e).__name__}: {e}")
         return SimulationResult(
             status='error',
             carrier_freq=params.carrier_freq,

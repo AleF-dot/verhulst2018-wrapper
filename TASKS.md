@@ -22,7 +22,12 @@
 
 # 06/05/2026
 [x] logging estructurado — migración de print() a logger.info/error con basicConfig en main.py
-[x] Instrumentación de model2018(): tiempo (perf_counter), CPU (psutil) y RAM (rss) por simulación
+[x] Instrumentación de model2018(): tiempo (perf_counter), CPU (psutil) y RAM pico (thread 100ms)
+[x] try/finally alrededor de model2018() — thread de muestreo se detiene ante excepciones
+[x] logger.exception en except — loguea traceback completo
 [x] MAX_WORKERS configurable via variable de entorno (docker-compose.yaml)
 [x] @app.on_event('startup') reemplazado por lifespan (asynccontextmanager)
 [x] psutil agregado a requirements.txt
+[x] Logger de batch en routes.py — tiempo total y cantidad de simulaciones (descartar al implementar colas)
+[ ] Celery + Redis — cola de trabajo para manejar concurrencia real (objetivo 100+ requests)
+[ ] async task pattern — POST /simulate devuelve task_id, GET /task/{task_id} para polling
